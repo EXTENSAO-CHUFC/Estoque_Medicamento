@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "estoque_medicamento-cdc"
+version = "0.1.0"
+description = ""
+authors = ["David <vazdavid460@gmail.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "3.12.10"
+psycopg2-binary = "^2.9"
+kafka-python = "^2.0.2"
+redis = "^4.5.0"
+streamlit = "^1.30.0"
+plotly = "^5.18.0"
+sqlalchemy = "^2.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
