@@ -1,105 +1,137 @@
-﻿# estoque_medicamento-cdc
+﻿# Estoque Medicamento — CDC e Analytics
 
-Este repositório contém os componentes de análise e CDC (Change Data Capture) para a solução de gerenciamento de estoque.
+Segundo repositório do projeto de estoque. Ele recebe alterações do PostgreSQL OLTP por Debezium/Kafka Connect, processa os eventos, atualiza PostgreSQL analítico e Redis e disponibiliza um dashboard Streamlit.
 
 ## Arquitetura
 
-- **Conector Debezium** captura alterações do banco de dados PostgreSQL de origem (do repositório `estoque-banco`) e as publica em tópicos Kafka.
-- **Kafka Connect** executa o conector Debezium.
-- **Consumidores Python** processam os eventos CDC:
-  - `cdc_parser.py`: analisa mensagens Debezium.
-  - `stage_redis.py`: atualiza o cache Redis com níveis de estoque em tempo real.
-  - `indicadores.py`: calcula indicadores (por exemplo, níveis de estoque) e dispara solicitações de reposição quando o estoque estiver ≤ 10% e não bloqueado.
-- **PostgreSQL Analítico** armazena dados agregados para relatórios.
-- **Jobs**: tarefas periódicas (por exemplo, `varredura_alertas.py`) que verificam condições e geram alertas.
-- **Dashboard**: aplicação Streamlit (`dashboard/app.py`) para visualização de níveis de estoque, movimentações e alertas.
+```text
+PostgreSQL OLTP (:5434)
+        ↓ WAL lógico
+Debezium / Kafka Connect (:8083)
+        ↓
+Kafka (:19090)
+        ↓
+Consumer analítico
+   ├── PostgreSQL Analytics (:5435)
+   ├── Redis (:6379)
+   └── tópico reabastecimento
+        ↓
+Streamlit (:8501)
+```
 
-## Estrutura do Diretório
+## Pré-requisitos
 
-- `docker-compose.yml`: define os serviços (Kafka, Kafka Connect, Redis, PostgreSQL Analítico).
-- `connect/`: configuração do conector Debezium e script de registro.
-- `src/`: código-fonte Python.
-  - `config/`: gerenciamento de configuração.
-  - `consumers/`: consumidores Kafka para processamento CDC.
-  - `models/`: definições de esquema do banco de dados analítico.
-  - `jobs/`: trabalhos em segundo plano.
-  - `dashboard/`: painel Streamlit.
-- `tests/`: testes unitários (a serem implementados).
-- `README.md`: este arquivo.
+- Python 3.12
+- Poetry
+- Docker com Docker Compose v2
+- GNU Make (`make` no Linux ou `mingw32-make` no Windows)
+- O repositório `estoque-banco` em execução, com PostgreSQL OLTP em `localhost:5434`
 
-## Como Começar
+Instale as dependências uma vez:
 
-### Pré-requisitos
+```bash
+poetry install
+```
 
-- Docker e Docker Compose
-- Python 3.12 (recomendado, gerenciado via pyenv)
-- Poetry (para gerenciamento de dependências)
-- Repositório `estoque-banco` já em execução (veja a seção "Observações")
+## Inicialização completa
 
-### Configuração
+Linux:
 
-1. **Clone o repositório** (se ainda não o fez).
+```bash
+make run
+```
 
-2. **Configure o ambiente Python**:
-   ```bash
-   pyenv install 3.12.10
-   pyenv local 3.12.10
-   poetry install
-   ```
+Windows com MinGW:
 
-3. **Inicie os serviços**:
-   ```bash
-   docker compose up -d
-   ```
+```powershell
+mingw32-make run
+```
 
-4. **Registre o conector Debezium**:
-   ```bash
-   ./connect/register-connector.sh
-   ```
-   (O script aguarda o Kafka Connect ficar pronto e então registra o conector.)
+O orquestrador detecta o sistema operacional e executa automaticamente:
 
-5. **Inicialize o esquema do banco de dados analítico**:
-   ```bash
-   python -m src.models.analytics_schema
-   ```
-   (Este script cria as tabelas necessárias no banco de dados PostgreSQL analítico.)
+1. verifica Docker e Docker Compose;
+2. cria `.env` e `infra/debezium/connector.env` a partir dos exemplos, caso não existam;
+3. verifica se o PostgreSQL OLTP responde em `localhost:5434`;
+4. sobe Kafka, Kafka Connect, Redis e PostgreSQL analítico;
+5. cria/valida o schema analítico;
+6. registra ou atualiza o conector Debezium;
+7. inicia consumidor e dashboard em segundo plano;
+8. salva PIDs e logs em `.runtime/`.
 
-6. **Inicie os consumidores CDC**:
-   ```bash
-   python -m src.consumers.indicadores
-   ```
+Dashboard: `http://localhost:8501`
 
-7. **Inicie o job periódico de alertas** (opcional):
-   ```bash
-   python -m src.jobs.varredura_alertas
-   ```
+## Encerramento
 
-8. **Inicie o painel**:
-   ```bash
-   streamlit run src/dashboard/app.py
-   ```
+Preserva o volume e os dados analíticos:
 
-## Como Funciona
+```bash
+make stop
+```
 
-1. O repositório `estoque-banco` executa o banco de dados OLTP principal (PostgreSQL) com replicação lógica habilitada, de forma totalmente independente — ele não conhece este repositório nem o Kafka.
-2. O Debezium captura operações `INSERT`, `UPDATE` e `DELETE` nas tabelas `medicamentos`, `lotes`, `movimentacoes`, `fornecedores`, `almoxarifados` e `usuarios`, e as publica em tópicos Kafka.
-3. O consumidor `indicadores.py`:
-   - Escuta os tópicos CDC relevantes.
-   - Atualiza um cache Redis com os níveis mais recentes de estoque (derivados de `lotes` e `movimentacoes`).
-   - Monitora a flag `bloqueio_reabastecimento` da tabela `medicamentos`.
-   - Quando o saldo de um lote cai para ≤ 10% do `estoque_maximo` e o medicamento não está bloqueado, publica uma mensagem no tópico `reabastecimento`.
-4. O `consumidor_reabastecimento.py`, que mora no repositório `estoque-banco`, consome o tópico `reabastecimento` e registra a movimentação de `ENTRADA` no banco de dados OLTP — fechando o ciclo. Este repositório nunca escreve diretamente no banco transacional.
-5. O banco de dados analítico recebe os dados processados pelos consumidores CDC, alimentando os indicadores.
-6. O painel fornece visibilidade em tempo real dos níveis de estoque, movimentações e alertas.
+No Windows:
 
-## Observações
+```powershell
+mingw32-make stop
+```
 
-- Certifique-se de que o repositório `estoque-banco` esteja em execução e seu banco de dados seja acessível via `host.docker.internal:5433` a partir dos contêineres desta stack.
-- Ajuste as variáveis de ambiente em `docker-compose.yml` ou em arquivos `.env` conforme necessário para sua configuração.
-- Os arquivos `consumers/indicadores.py` e `jobs/varredura_alertas.py` contêm lógica simplificada; adapte os critérios de reposição às suas regras de negócio.
-- Este repositório **não hospeda o banco transacional nem escreve nele diretamente** — toda escrita no OLTP acontece do lado do `estoque-banco`, mesmo quando originada por um evento detectado aqui. O isolamento entre os dois repositórios é intencional.
-- Evolução futura possível: substituir o PostgreSQL analítico por uma ferramenta OLAP dedicada, como o ClickHouse, caso o volume de dados justifique consultas colunares otimizadas para agregações.
+## Comandos
 
-## Licença
+```text
+make run       inicia todo o sistema
+make stop      encerra processos e containers, preservando os dados
+make restart   reinicia o sistema
+make status    exibe containers, consumer e dashboard
+make logs      acompanha logs dos containers
+make clean     encerra tudo e remove o volume analítico
+make reset     recria todo o ambiente do zero
+```
 
-MIT
+Os comandos individuais (`infra`, `schema`, `connector`, `consumer` e `dashboard`) permanecem disponíveis para diagnóstico.
+
+## Configuração
+
+O `.env` configura Kafka, Redis, PostgreSQL analítico e regras de reabastecimento.
+
+O arquivo `infra/debezium/connector.env` configura o acesso do Debezium ao banco OLTP. A senha deve coincidir com a senha do usuário `debezium_replicator` criada pelo primeiro repositório.
+
+```env
+OLTP_HOST=host.docker.internal
+OLTP_PORT=5434
+OLTP_DATABASE=estoque_banco
+OLTP_USER=debezium_replicator
+OLTP_PASSWORD=debezium_password
+```
+
+## Logs
+
+```text
+.runtime/logs/consumer.log
+.runtime/logs/dashboard.log
+```
+
+Logs da infraestrutura Docker:
+
+```bash
+make logs
+```
+
+## Estrutura
+
+```text
+app/
+├── config/
+├── consumers/
+├── dashboard/
+├── models/
+└── services/
+
+infra/
+├── debezium/
+└── postgres/
+
+scripts/
+├── iniciar.py
+├── encerrar.py
+├── status.py
+└── register_connector.py
+```

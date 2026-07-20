@@ -1,18 +1,21 @@
 [tool.poetry]
-name = "estoque_medicamento-cdc"
-version = "0.1.0"
-description = ""
-authors = ["David <vazdavid460@gmail.com>"]
+name = "estoque-medicamento-cdc"
+version = "0.2.0"
+description = "Pipeline CDC e análise em tempo real para estoque de medicamentos"
+authors = ["David Vaz"]
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "3.12.10"
-psycopg2-binary = "^2.9"
+python = "^3.12"
 kafka-python = "^2.0.2"
-redis = "^4.5.0"
-streamlit = "^1.30.0"
-plotly = "^5.18.0"
-sqlalchemy = "^2.0.0"
+redis = "^5.0"
+streamlit = "^1.40"
+plotly = "^5.24"
+pandas = "^2.2"
+sqlalchemy = "^2.0"
+psycopg2-binary = "^2.9"
+requests = "^2.32"
+python-dotenv = "^1.0"
 
 [build-system]
 requires = ["poetry-core"]

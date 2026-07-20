@@ -1,37 +1,50 @@
-﻿.PHONY: setup start-services register-connector init-analytics-schema start-consumers start-alert-job start-dashboard test clean
+﻿.PHONY: run start stop restart status logs logs-app clean reset infra schema connector consumer dashboard help
 
-# Configuração: inicia os serviços, registra o conector, inicializa o esquema analítico
-setup: start-services register-connector init-analytics-schema
+PYTHON := poetry run python
 
-# Inicia os serviços (Kafka, Connect, Redis, Postgres Analytics)
-start-services:
-	docker-compose up -d
+run start:
+	$(PYTHON) -m scripts.iniciar
 
-# Registra o conector do Debezium
-register-connector:
-	./connect/register-connector.sh
+stop:
+	$(PYTHON) -m scripts.encerrar
 
-# Inicializa o esquema analítico do banco de dados
-init-analytics-schema:
-	python -m src.models.analytics_schema
+restart: stop run
 
-# Inicia os consumidores CDC (indicadores)
-start-consumers:
-	python -m src.consumers.indicadores
+status:
+	$(PYTHON) -m scripts.status
 
-# Inicia o job periódico de alertas (opcional)
-start-alert-job:
-	python -m src.jobs.varredura_alertas
+logs:
+	docker compose logs -f --tail=200
 
-# Inicia o dashboard do Streamlit
-start-dashboard:
-	streamlit run dashboard/app.py
+logs-app:
+	$(PYTHON) -c "from pathlib import Path; p=Path('.runtime/logs'); print('\\n'.join(str(x) for x in sorted(p.glob('*.log'))) if p.exists() else 'Nenhum log disponível em .runtime/logs')"
 
-# Executa os testes (placeholder)
-test:
-	@echo "Nenhum teste definido ainda."
+infra:
+	docker compose up -d --wait
 
-# Limpar: para e remove os contêineres, volumes e imagens
-clean:
-	docker-compose down -v
-	@echo "Contêineres e volumes limpos."
+schema:
+	$(PYTHON) -m app.models.init_db
+
+connector:
+	$(PYTHON) -m scripts.register_connector
+
+consumer:
+	$(PYTHON) -m app.consumers.analytics_consumer
+
+dashboard:
+	poetry run streamlit run app/dashboard/dashboard.py
+
+clean: stop
+	docker compose down -v --remove-orphans
+
+reset: clean run
+
+help:
+	@echo "Comandos principais:"
+	@echo "  make run       Sobe infraestrutura, schema, Debezium, consumer e dashboard"
+	@echo "  make stop      Encerra processos e containers preservando os dados"
+	@echo "  make restart   Reinicia todo o sistema"
+	@echo "  make status    Mostra containers e processos Python"
+	@echo "  make logs      Acompanha logs dos containers"
+	@echo "  make clean     Encerra tudo e apaga o volume do banco analítico"
+	@echo "  make reset     Recria tudo do zero"
