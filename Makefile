@@ -1,4 +1,4 @@
-﻿.PHONY: run start stop restart status logs logs-app clean reset infra schema connector consumer dashboard help
+﻿.PHONY: run start stop restart status logs logs-app clean reset infra connector consumer dashboard redis-cli topics help
 
 PYTHON := poetry run python
 
@@ -22,9 +22,6 @@ logs-app:
 infra:
 	docker compose up -d --wait
 
-schema:
-	$(PYTHON) -m app.models.init_db
-
 connector:
 	$(PYTHON) -m scripts.register_connector
 
@@ -34,6 +31,12 @@ consumer:
 dashboard:
 	poetry run streamlit run app/dashboard/dashboard.py
 
+redis-cli:
+	docker exec -it estoque-cdc-redis redis-cli
+
+topics:
+	docker exec -it estoque-cdc-kafka1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --list
+
 clean: stop
 	docker compose down -v --remove-orphans
 
@@ -41,10 +44,13 @@ reset: clean run
 
 help:
 	@echo "Comandos principais:"
-	@echo "  make run       Sobe infraestrutura, schema, Debezium, consumer e dashboard"
-	@echo "  make stop      Encerra processos e containers preservando os dados"
-	@echo "  make restart   Reinicia todo o sistema"
-	@echo "  make status    Mostra containers e processos Python"
+	@echo "  make run       Sobe Kafka KRaft, Connect, Redis, consumer e dashboard"
+	@echo "  make stop      Encerra processos e containers preservando volumes"
+	@echo "  make restart   Reinicia o sistema"
+	@echo "  make status    Mostra containers, conector e processos Python"
 	@echo "  make logs      Acompanha logs dos containers"
-	@echo "  make clean     Encerra tudo e apaga o volume do banco analítico"
-	@echo "  make reset     Recria tudo do zero"
+	@echo "  make logs-app  Lista os logs do consumer e dashboard"
+	@echo "  make topics    Lista os tópicos Kafka"
+	@echo "  make redis-cli Abre o redis-cli"
+	@echo "  make clean     Encerra tudo e apaga Kafka/Redis"
+	@echo "  make reset     Recria o pipeline e força novo snapshot"

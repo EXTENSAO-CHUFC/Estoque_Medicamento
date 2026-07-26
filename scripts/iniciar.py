@@ -216,7 +216,7 @@ def main() -> None:
         ensure_configuration()
         validate_oltp_connection()
 
-        print_step("🐳 Subindo Kafka, Kafka Connect, Redis e PostgreSQL analítico...")
+        print_step("🐳 Subindo cluster Kafka KRaft, Kafka Connect e Redis...")
         try:
             run(["docker", "compose", "up", "-d", "--wait"])
         except subprocess.CalledProcessError:
@@ -226,16 +226,13 @@ def main() -> None:
             run(["docker", "compose", "logs", "--tail=120", "zookeeper"], check=False)
             raise
 
-        print_step("🏗️  Criando/validando o schema analítico...")
-        run([sys.executable, "-m", "app.models.init_db"])
-
         print_step("🔌 Registrando/atualizando o conector Debezium...")
         run([sys.executable, "-m", "scripts.register_connector"])
 
         processes = start_application_processes()
         wait_for_port("127.0.0.1", 8501, "Dashboard Streamlit", timeout=30)
 
-        print_step("\n✅ Pipeline CDC iniciado com sucesso.")
+        print_step("\n✅ Pipeline CDC com Redis iniciado com sucesso.")
         print_step("🌐 Dashboard: http://localhost:8501")
         print_step("🔌 Kafka Connect: http://localhost:8083")
         for name, info in processes.items():
