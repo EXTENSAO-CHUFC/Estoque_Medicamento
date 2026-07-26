@@ -90,7 +90,7 @@ def main() -> None:
     )
     if result.returncode != 0:
         raise SystemExit("Não foi possível encerrar os containers Docker.")
-    print("✅ Sistema encerrado. Os dados analíticos foram preservados.")
+    print("✅ Sistema encerrado. Os volumes do Kafka e do Redis foram preservados.")
 
 
 if __name__ == "__main__":

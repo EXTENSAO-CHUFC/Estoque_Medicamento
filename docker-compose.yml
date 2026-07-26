@@ -1,114 +1,175 @@
-﻿name: estoque-analytics
+﻿name: estoque-cdc
+
+x-kafka-common: &kafka-common
+  image: apache/kafka:3.7.0
+  user: root
+  restart: unless-stopped
+  deploy:
+    resources:
+      limits:
+        memory: 600M
+      reservations:
+        memory: 256M
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
 
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.7.1
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/2181'"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-
-  kafka:
-    image: confluentinc/cp-kafka:7.7.1
-    depends_on:
-      zookeeper:
-        condition: service_healthy
+  kafka1:
+    <<: *kafka-common
+    container_name: estoque-cdc-kafka1
     ports:
       - "19090:19090"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19090
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:19090
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:19090,CONTROLLER://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:9092,EXTERNAL://localhost:19090
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9094,2@kafka2:9094,3@kafka3:9094
+      KAFKA_CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - kafka1_data:/tmp/kraft-combined-logs
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"
-        ]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 30s
+
+  kafka2:
+    <<: *kafka-common
+    container_name: estoque-cdc-kafka2
+    ports:
+      - "19091:19091"
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:19091,CONTROLLER://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:9092,EXTERNAL://localhost:19091
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9094,2@kafka2:9094,3@kafka3:9094
+      KAFKA_CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - kafka2_data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  kafka3:
+    <<: *kafka-common
+    container_name: estoque-cdc-kafka3
+    ports:
+      - "19092:19092"
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:19092,CONTROLLER://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:9092,EXTERNAL://localhost:19092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9094,2@kafka2:9094,3@kafka3:9094
+      KAFKA_CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - kafka3_data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
   connect:
     image: quay.io/debezium/connect:3.0
+    container_name: estoque-cdc-connect
+    restart: unless-stopped
     depends_on:
-      kafka:
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
         condition: service_healthy
     ports:
       - "8083:8083"
     environment:
-      BOOTSTRAP_SERVERS: kafka:9092
+      BOOTSTRAP_SERVERS: kafka1:9092,kafka2:9092,kafka3:9092
       GROUP_ID: estoque-connect
       CONFIG_STORAGE_TOPIC: estoque_connect_configs
       OFFSET_STORAGE_TOPIC: estoque_connect_offsets
       STATUS_STORAGE_TOPIC: estoque_connect_status
-      CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONFIG_STORAGE_REPLICATION_FACTOR: 3
+      OFFSET_STORAGE_REPLICATION_FACTOR: 3
+      STATUS_STORAGE_REPLICATION_FACTOR: 3
       KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      CONFIG_PROVIDERS: file
-      CONFIG_PROVIDERS_FILE_CLASS: org.apache.kafka.common.config.provider.FileConfigProvider
-    volumes:
-      - ./infra/debezium/connector.env:/config/connector.env:ro
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -fsS http://localhost:8083/connectors >/dev/null"
-        ]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors >/dev/null"]
       interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
+    container_name: estoque-cdc-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 10
-
-  postgres-analytics:
-    image: postgres:16-alpine
-    ports:
-      - "5435:5432"
-    environment:
-      POSTGRES_DB: ${ANALYTICS_DATABASE:-estoque_analytics}
-      POSTGRES_USER: ${ANALYTICS_USER:-analytics_user}
-      POSTGRES_PASSWORD: ${ANALYTICS_PASSWORD:-analytics_password}
-    volumes:
-      - postgres_analytics_data:/var/lib/postgresql/data
-      - ./infra/postgres/01_analytics.sql:/docker-entrypoint-initdb.d/01_analytics.sql:ro
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${ANALYTICS_USER:-analytics_user} -d ${ANALYTICS_DATABASE:-estoque_analytics}"
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 15
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
 volumes:
-  postgres_analytics_data:
-
+  kafka1_data:
+  kafka2_data:
+  kafka3_data:
+  redis_data:
