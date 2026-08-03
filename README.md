@@ -29,6 +29,7 @@ estoque-banco → PostgreSQL/WAL → Debezium → Kafka → consumer Python → 
 | Kafka Connect | `http://localhost:8083` |
 | Redis | `localhost:6379` |
 | Dashboard | `http://localhost:8501` |
+| Virtual Machine | Microsoft Azure |
 
 ## Primeira execução
 
