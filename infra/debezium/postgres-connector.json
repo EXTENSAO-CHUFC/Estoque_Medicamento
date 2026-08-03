@@ -15,6 +15,7 @@
     "publication.name": "debezium_pub",
     "publication.autocreate.mode": "disabled",
     "snapshot.mode": "initial",
-    "tombstones.on.delete": "false"
+    "tombstones.on.delete": "false",
+    "heartbeat.interval.ms": "10000"
   }
 }

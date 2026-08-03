@@ -1,0 +1,18 @@
+# AVISO: evita enviar arquivos locais, runtime e segredos para a imagem.
+.git
+.gitignore
+.venv
+.env
+.env.*
+!.env.example
+__pycache__
+*.py[cod]
+*.log
+.runtime
+.vscode
+.idea
+.pytest_cache
+.mypy_cache
+dist
+build
+infra/debezium/connector.env

@@ -1,0 +1,193 @@
+# AVISO: Compose Azure econômico, com um único broker Kafka em KRaft.
+name: estoque-cdc-azure
+
+x-python-common: &python-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  env_file:
+    - .env.azure
+  networks:
+    - estoque-network
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: estoque-kafka
+    restart: unless-stopped
+    user: root
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      CLUSTER_ID: c1efea27-733e-4c6a-94c0-67e69f5adfea
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+      KAFKA_LOG_SEGMENT_BYTES: 134217728
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx768m
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      estoque-network:
+        aliases:
+          - kafka
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  connect:
+    image: quay.io/debezium/connect:3.0
+    container_name: estoque-connect
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: estoque-connect
+      CONFIG_STORAGE_TOPIC: estoque_connect_configs
+      OFFSET_STORAGE_TOPIC: estoque_connect_offsets
+      STATUS_STORAGE_TOPIC: estoque_connect_status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx768m
+    expose:
+      - "8083"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      estoque-network:
+        aliases:
+          - connect
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: estoque-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      estoque-network:
+        aliases:
+          - redis
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  register-connector:
+    <<: *python-common
+    container_name: estoque-register-connector
+    restart: "no"
+    command: python -m scripts.register_connector
+    environment:
+      KAFKA_CONNECT_URL: http://connect:8083
+      OLTP_HOST: postgres
+      OLTP_PORT: 5432
+      OLTP_DATABASE: ${POSTGRES_DB:-estoque_banco}
+      OLTP_USER: ${DEBEZIUM_USER:-debezium_replicator}
+      OLTP_PASSWORD: ${DEBEZIUM_PASSWORD:?Defina DEBEZIUM_PASSWORD no .env.azure}
+    depends_on:
+      connect:
+        condition: service_healthy
+
+  consumer-cdc:
+    <<: *python-common
+    container_name: estoque-consumer-cdc
+    command: python -m app.consumers.analytics_consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      register-connector:
+        condition: service_completed_successfully
+
+  dashboard:
+    <<: *python-common
+    container_name: estoque-dashboard
+    command: >-
+      streamlit run app/dashboard/dashboard.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      --server.baseUrlPath=dashboard
+      --server.headless=true
+    expose:
+      - "8501"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8501/dashboard/_stcore/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  kafka_data:
+  redis_data:
+
+networks:
+  estoque-network:
+    external: true
+    name: estoque-network
